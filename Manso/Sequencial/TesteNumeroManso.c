@@ -53,6 +53,7 @@ int testarNumero (int n) {
 
         if (contador >= 4 && historico[0] == 3 && historico[1] == 15 && historico[2] == 7 && historico[3] == 3) {
             return contador;
+            break;
         }
 
         if (contador % 15 == 0) {
@@ -85,5 +86,5 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-//Para compilar: gcc TesteNumerosManso.c -O3 TesteNumerosManso
+//Para compilar: gcc -O3 TesteNumerosManso.c -o TesteNumerosManso
 //Para rodar: ./TesteNumerosManso 100
