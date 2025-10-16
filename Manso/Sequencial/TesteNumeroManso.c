@@ -34,7 +34,7 @@ int aplicarRegras (int n) {
     }
 }
 
-int testarNumero (int n) {
+void testarNumero (int n) {
     const int LIMITE = 100000;
     int atual = n;
     int contador = 0;
