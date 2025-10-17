@@ -37,7 +37,7 @@ long long aplicarRegras(long long n) {
 
 void testeIntervalo(long long fim) {
     const long long LIMITE = 1000000000000; //1 trilhão
-    #pragma omp parallel for private(atual, contador, convergiu) schedule(dynamic) // Paraleliza o for com OpenMP
+    #pragma omp parallel for schedule(dynamic) // Paraleliza o for com OpenMP
     for (long long i = 1; i <= fim; i++) {
         long long atual = i;
         long long contador = 0;
