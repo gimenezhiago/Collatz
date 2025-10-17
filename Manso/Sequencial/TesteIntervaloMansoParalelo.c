@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h> //Para usar booleano
 #include <stdlib.h> //Para usar atoll
+#include <omp.h> //Para paralelizar com OpenMP
 
 bool ehPrimo(long long n) {
     if (n <= 1) return false;
@@ -36,6 +37,7 @@ long long aplicarRegras(long long n) {
 
 void testeIntervalo(long long fim) {
     const long long LIMITE = 1000000000; //1 bilhao
+    #pragma omp parallel for private(atual, contador, convergiu) schedule(dynamic) // Paraleliza o for com OpenMP
     for (long long i = 1; i <= fim; i++) {
         long long atual = i;
         long long contador = 0;
@@ -59,9 +61,9 @@ void testeIntervalo(long long fim) {
 
         if (!convergiu) {
             printf("O numero %lld nao convergiu (>%lld iteracoes). ultimo valor = %lld\n", i, LIMITE, atual);
-            break;
         }
 
+        #pragma omp critical //seção crítica para evitar que múltiplas threads imprimam ao mesmo tempo
         if (i % 100000 == 0) {
             printf("Testados %lld numeros\n", i);
         }
@@ -87,5 +89,5 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-// Para compilar: gcc -O3 TesteIntervaloManso.c -o TesteIntervaloManso
+// Para compilar: gcc -O3 -fopenmp TesteIntervaloManso.c -o TesteIntervaloManso
 // Para rodar: ./TesteIntervaloManso 100
