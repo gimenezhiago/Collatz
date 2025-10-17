@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include <stdbool.h> //para booleano
-#include <stdlib.h> //serve para pegar o atoi
+#include <stdbool.h> //Para usar booleano
+#include <stdlib.h> //Para usar atoi
 
 bool ehPrimo(int n) {
     if (n <= 1) return false;
@@ -12,15 +12,15 @@ bool ehPrimo(int n) {
     return true;
 }
 
-int somaAlgarismo (int n) {
+int somaAlgarismo(int n) {
     int soma = 0;
-    for (; n > 0; n /= 10) { // n = n/10
+    for (; n > 0; n /= 10) { //n = n / 10
         soma += n % 10;
     }
     return soma;
 }
 
-int aplicarRegras (int n) {
+int aplicarRegras(int n) {
     if (ehPrimo(n)) {
         return n + (n + 1);
     } else if (n % 5 == 0) {
@@ -34,55 +34,53 @@ int aplicarRegras (int n) {
     }
 }
 
-void testeIntervalo (int fim) {
+void testeIntervalo(int fim) {
     const int LIMITE = 100000;
     for (int i = 1; i <= fim; i++) {
         int atual = i;
         int contador = 0;
-        int historico[4] = {0, 0, 0, 0};
         bool convergiu = false;
 
-        while (contador <= LIMITE) {
-            atual = aplicarRegras(atual);
-            contador++;
-
-            historico[0] = historico[1];
-            historico[1] = historico[2];
-            historico[2] = historico[3];
-            historico[3] = atual;
-
-            if (contador >= 4 && historico[0] == 3 && historico[1] == 15 && historico[2] == 7 && historico[3] == 3) {
+        while (contador < LIMITE) {
+            if (atual == 3 || atual == 7 || atual == 15 || 
+                atual == 1 || atual == 2 || atual == 5) {
                 convergiu = true;
                 break;
             }
+
+            atual = aplicarRegras(atual);
+            contador++;
         }
 
         if (!convergiu) {
             printf("O numero %d nao convergiu (>%d iteracoes). ultimo valor = %d\n", i, LIMITE, atual);
-            // continue para testar o próximo número em vez de sair na primeira falha
-            continue;
+            break;
+        }
+
+        if (i % 1000 == 0) {
+            printf("Testados %d numeros\n", i);
         }
     }
+    printf("Teste concluido ate %d\n", fim);
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) { //verifica se tem o parametro
-        printf("Uso: %s <fim>\n", argv[0]); //
+    if (argc < 2) {
+        printf("Uso: %s <fim>\n", argv[0]);
         return 1;
     }
 
-    int fim = atoi(argv[1]); //converte string para inteiro
+    int fim = atoi(argv[1]);
     if (fim <= 0) { 
-        printf("Parametro invalido para 'fim': %s\n", argv[1]);
+        printf("Parametro invalido: %s\n", argv[1]);
         return 1;
     }
 
     printf("Testando ate %d\n", fim);
-
     testeIntervalo(fim);
 
     return 0;
 }
 
-//Para compilar: gcc TesteIntervaloManso.c -O3 TesteIntervaloManso
-//Para rodar: ./TesteIntervaloManso 100
+// Para compilar: gcc -O3 TesteIntervaloManso.c -o TesteIntervaloManso
+// Para rodar: ./TesteIntervaloManso 100

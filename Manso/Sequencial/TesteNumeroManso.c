@@ -38,23 +38,18 @@ int testarNumero (int n) {
     const int LIMITE = 100000;
     int atual = n;
     int contador = 0;
-    int historico[4] = {0, 0, 0, 0};
 
     while (contador <= LIMITE) {
+        if (atual == 3 || atual == 7 || atual == 15 || 
+            atual == 1 || atual == 2 || atual == 5) {
+            printf("Convergiu em %d passos\n", contador);
+            return;
+        }
+
         atual = aplicarRegras(atual);
         contador++;
 
         printf("%d - ", atual);
-
-        historico[0] = historico[1];
-        historico[1] = historico[2];
-        historico[2] = historico[3];
-        historico[3] = atual;
-
-        if (contador >= 4 && historico[0] == 3 && historico[1] == 15 && historico[2] == 7 && historico[3] == 3) {
-            return contador;
-            break;
-        }
 
         if (contador % 15 == 0) {
             printf("\n");
@@ -62,7 +57,6 @@ int testarNumero (int n) {
     }
 
     printf("\nO numero %d nao convergiu (>%d iteracoes). ultimo valor = %d\n", n, LIMITE, atual);
-    return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -77,11 +71,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int passos = testarNumero(numero);
-
-    if (passos > 0) {
-        printf("\nO numero %d convergiu em %d passos\n", numero, passos);
-    }
+    testarNumero(numero);
 
     return 0;
 }
