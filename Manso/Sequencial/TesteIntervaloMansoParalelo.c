@@ -89,4 +89,4 @@ int main(int argc, char *argv[]) {
 }
 
 // Para compilar: gcc -O3 -fopenmp TesteIntervaloMansoParalelo.c -o TesteIntervaloMansoParalelo
-// Para rodar: ./TesteIntervaloManso 100
+// Para rodar: ./TesteIntervaloMansoParalelo 100
