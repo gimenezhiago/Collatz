@@ -36,7 +36,7 @@ long long aplicarRegras(long long n) {
 }
 
 void testeIntervalo(long long fim) {
-    const long long LIMITE = 1000000000; //1 bilhao
+    const long long LIMITE = 1000000000000; //1 trilhão
     #pragma omp parallel for private(atual, contador, convergiu) schedule(dynamic) // Paraleliza o for com OpenMP
     for (long long i = 1; i <= fim; i++) {
         long long atual = i;
@@ -88,5 +88,5 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-// Para compilar: gcc -O3 -fopenmp TesteIntervaloManso.c -o TesteIntervaloManso
+// Para compilar: gcc -O3 -fopenmp TesteIntervaloMansoParalelo.c -o TesteIntervaloMansoParalelo
 // Para rodar: ./TesteIntervaloManso 100
