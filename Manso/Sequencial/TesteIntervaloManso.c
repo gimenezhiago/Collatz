@@ -14,7 +14,7 @@ bool ehPrimo(long long n) {
 
 inline long long somaAlgarismo(long long n) { //inline - troca a funcao por seu conteudo
     long long soma = 0;
-    for (; n > 0; n /= 10) {
+    for (; n > 0; n /= 10) { 
         soma += n % 10;
     }
     return soma;
@@ -42,8 +42,7 @@ void testeIntervalo(long long fim) {
         bool convergiu = false;
 
         while (contador < LIMITE) {
-            if (atual == 3 || atual == 7 || atual == 15 ||
-                atual == 1 || atual == 2 || atual == 5) {
+            if (atual == 3 || atual == 7 || atual == 15) {
                 convergiu = true;
                 break;
             }

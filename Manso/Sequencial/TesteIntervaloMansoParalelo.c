@@ -44,8 +44,7 @@ void testeIntervalo(long long fim) {
         bool convergiu = false;
 
         while (contador < LIMITE) {
-            if (atual == 3 || atual == 7 || atual == 15 ||
-                atual == 1 || atual == 2 || atual == 5) {
+            if (atual == 3 || atual == 7 || atual == 15) {
                 convergiu = true;
                 break;
             }
