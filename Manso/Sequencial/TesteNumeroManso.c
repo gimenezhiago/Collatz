@@ -35,7 +35,7 @@ int aplicarRegras (int n) {
 }
 
 void testarNumero (int n) {
-    const int LIMITE = 100000;
+    const int LIMITE = 1000000000000; //1 trilhão;
     int atual = n;
     int contador = 0;
 
