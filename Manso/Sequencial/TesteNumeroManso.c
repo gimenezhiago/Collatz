@@ -2,25 +2,25 @@
 #include <stdbool.h> //para booleano
 #include <stdlib.h> //serve para pegar o atoi
 
-bool ehPrimo(int n) {
+bool ehPrimo(long long n) {
     if (n <= 1) return false;
     if (n == 2) return true;
     if (n % 2 == 0) return false;
-    for (int i = 3; i * i <= n; i += 2) {
+    for (long long i = 3; i * i <= n; i += 2) {
         if (n % i == 0) return false;
     }
     return true;
 }
 
-int somaAlgarismo (int n) {
-    int soma = 0;
+long long somaAlgarismo (long long n) {
+    long long soma = 0;
     for (; n > 0; n /= 10) { // n = n/10
         soma += n % 10;
     }
     return soma;
 }
 
-int aplicarRegras (int n) {
+long long aplicarRegras (long long n) {
     if (ehPrimo(n)) {
         return n + (n + 1);
     } else if (n % 5 == 0) {
@@ -34,28 +34,28 @@ int aplicarRegras (int n) {
     }
 }
 
-void testarNumero (int n) {
-    const int LIMITE = 1000000000000; //1 trilhão;
-    int atual = n;
-    int contador = 0;
+void testarNumero (long long n) {
+    const long long LIMITE = 1000000000000; //1 trilhão;
+    long long atual = n;
+    long long contador = 0;
 
     while (contador <= LIMITE) {
         if (atual == 3 || atual == 7 || atual == 15) {
-            printf("Convergiu em %d passos\n", contador);
+            printf("Convergiu em %lld passos\n", contador);
             return;
         }
 
         atual = aplicarRegras(atual);
         contador++;
 
-        printf("%d - ", atual);
+        printf("%lld - ", atual);
 
-        if (contador % 15 == 0) {
+        if (contador % 10 == 0) {
             printf("\n");
         }
     }
 
-    printf("\nO numero %d nao convergiu (>%d iteracoes). ultimo valor = %d\n", n, LIMITE, atual);
+    printf("\nO numero %lld nao convergiu (>%lld iteracoes). ultimo valor = %lld\n", n, LIMITE, atual);
 }
 
 int main(int argc, char *argv[]) {
@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int numero = atoi(argv[1]); //converte string para inteiro
+    long long numero = atoll(argv[1]); //converte string para inteiro
     if (numero <= 0) {
         printf("Parametro invalido: %s\n", argv[1]);
         return 1;
