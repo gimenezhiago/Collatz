@@ -17,6 +17,10 @@ long long produtoDigitos(long long n) {
 long long aplicarRegras(long long n) {
     long long produto = produtoDigitos(n);
 
+    if (produto == 1) {
+        return n + 1;
+    }
+
     long long soma = n + produto;
 
     if (n % produto == 0) {
