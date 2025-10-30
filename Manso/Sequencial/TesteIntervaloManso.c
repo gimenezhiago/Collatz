@@ -35,7 +35,7 @@ long long aplicarRegras(long long n) {
 }
 
 void testeIntervalo(long long fim) {
-    const long long LIMITE = 1000000000; //1 bilhao
+    const long long LIMITE = 1000000000000; //1 trilhão
     for (long long i = 1; i <= fim; i++) {
         long long atual = i;
         long long contador = 0;
