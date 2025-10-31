@@ -25,7 +25,6 @@ long long substituirZeros(long long n) {
 }
 
 long long produtoDigitos(long long n) {
-    n = substituirZeros(n);
 
     long long produto = 1;
     for (; n > 0; n /= 10) {
@@ -38,7 +37,7 @@ long long produtoDigitos(long long n) {
 long long aplicarRegras(long long n) {
     long long numeroModificado = substituirZeros(n);
 
-    long long produto = produtoDigitos(n);
+    long long produto = produtoDigitos(numeroModificado);
 
     if (produto == 1) {
         return numeroModificado + 1;
