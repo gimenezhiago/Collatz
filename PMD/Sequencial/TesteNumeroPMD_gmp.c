@@ -18,6 +18,7 @@ void substituirZeros(mpz_t resultado, const mpz_t n) { //saida-entrada
     if (mpz_cmp_ui(n, 0) == 0) {
         mpz_set_ui(resultado, 1); //resultado = 1
         mpz_clears(temp_n, digito, multiplicador, NULL); //return
+        return;
     }
 
     while (mpz_cmp_ui(temp_n, 0) > 0) {
