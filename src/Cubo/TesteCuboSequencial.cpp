@@ -11,11 +11,14 @@
 #define R 4
 #define L 5
 #define NUM_MOV         18
-#define TAM_POP         20000
-#define MAX_ESTAG       50
+#define TAM_POP         30000
+#define MAX_ESTAG       80
 #define TAX_MUT_INI     0.02f
 #define TAX_MUT_INC     0.005f
 #define FIT_MAX         100.0f
+#define ELITE_FRAC      0.05f    /* fração da população mantida por elitismo */
+#define REINIT_FRAC     0.30f    /* fração reinicializada ao estagnar         */
+#define MAX_CROM_MULT   2        /* cromossomo pode ter até 2× o embaralhamento */
 
 /* -----------------------------------------------------------------------
  * Pesos da melhor configuração encontrada (artigo SICITE + relatório IC)
@@ -28,8 +31,6 @@
  *
  * O valor mais determinante é o da borda permutada (+35), pois é o único
  * positivo e permite distinguir cubos mais próximos da solução.
- * Os valores de canto são todos negativos, punindo a pontuação bruta,
- * mas a normalização posterior os compensa corretamente.
  * ----------------------------------------------------------------------- */
 static const int FC[4] = {-1, -5, -9, -6};
 static const int FB[4] = {-96, -78, 35, -6};
@@ -77,29 +78,19 @@ void aplicar(Cubo&c,const std::vector<int>&v){for(int m:v)aplicar_mov(c,m);}
 
 /* -----------------------------------------------------------------------
  * Estado de borda i  →  0=correto  1=orientado  2=permutado  3=incorreto
- *
- * Correto:   ambos os adesivos batem com seus centros adjacentes.
- * Permutado: ambos os adesivos presentes, mas invertidos entre si.
- * Orientado: apenas um adesivo corresponde ao centro adjacente.
- * Incorreto: nenhum adesivo corresponde.
  * ----------------------------------------------------------------------- */
 static int eb(const Cubo &c, int i) {
     int c0 = c.face[BORDAS[i][0][0]][BORDAS[i][0][1]][BORDAS[i][0][2]];
     int c1 = c.face[BORDAS[i][1][0]][BORDAS[i][1][1]][BORDAS[i][1][2]];
     int e0 = BCOR[i][0], e1 = BCOR[i][1];
-    if(c0==e0 && c1==e1) return 0;   /* correto   */
-    if(c0==e1 && c1==e0) return 2;   /* permutado */
-    if(c0==e0 || c1==e1) return 1;   /* orientado */
-    return 3;                         /* incorreto */
+    if(c0==e0 && c1==e1) return 0;
+    if(c0==e1 && c1==e0) return 2;
+    if(c0==e0 || c1==e1) return 1;
+    return 3;
 }
 
 /* -----------------------------------------------------------------------
  * Estado de canto i  →  0=correto  1=orientado  2=permutado  3=incorreto
- *
- * Correto:   todos os 3 adesivos batem com seus centros adjacentes.
- * Permutado: todos os 3 adesivos estão presentes mas girados (CW ou CCW).
- * Orientado: exatamente 1 adesivo corresponde ao centro adjacente.
- * Incorreto: nenhum adesivo corresponde.
  * ----------------------------------------------------------------------- */
 static int ec(const Cubo &c, int i) {
     int co[3], es[3];
@@ -109,32 +100,24 @@ static int ec(const Cubo &c, int i) {
     }
     int ct=0;
     for(int k=0;k<3;k++) if(co[k]==es[k]) ct++;
-    if(ct==3) return 0;   /* correto   */
+    if(ct==3) return 0;
     int tm=0;
     for(int k=0;k<3;k++) for(int m=0;m<3;m++) if(co[k]==es[m]){tm++;break;}
-    if(tm==3 && ct==0) return 2;  /* permutado */
-    if(ct==1)          return 1;  /* orientado */
-    return 3;                     /* incorreto */
+    if(tm==3 && ct==0) return 2;
+    if(ct==1)          return 1;
+    return 3;
 }
 
 /* -----------------------------------------------------------------------
  * fitness(orig, v)
  *
- * Algoritmo de pontuação conforme descrito nos artigos:
- *   1. Aplica a sequência de movimentos v sobre uma cópia do cubo orig.
- *   2. Se o cubo estiver resolvido → retorna FIT_MAX = 100.
- *   3. Percorre as 12 bordas e os 8 cantos, acumulando FB[estado] e
- *      FC[estado] respectivamente.
- *   4. Normaliza linearmente para o intervalo [0, 99]:
- *
- *        score_max  =  12 × FB[0] + 8 × FC[0]   (todos corretos)
- *        score_min  =  12 × FB[2] + 8 × FC[2]   (todos permutados)
- *
- *        fitness = (score_max - s) / (score_max - score_min) × 100
- *
- *   O decréscimo esperado é aproximadamente linear de 100 (0 mov)
- *   a 0 (20 mov), conforme a Figura 3 do artigo. Na prática, a
- *   função perde precisão a partir de ~9 movimentos (Figura 4).
+ * 1. Aplica a sequência v sobre cópia do cubo orig.
+ * 2. Se resolvido → retorna FIT_MAX = 100.
+ * 3. Acumula FB[estado] para 12 bordas e FC[estado] para 8 cantos.
+ * 4. Normaliza linearmente para [0, 99]:
+ *      score_max = 12×FB[0] + 8×FC[0]   (todos corretos)
+ *      score_min = 12×FB[2] + 8×FC[2]   (todos permutados)
+ *      fitness = (score_max − s) / (score_max − score_min) × 100
  * ----------------------------------------------------------------------- */
 float fitness(const Cubo &orig, const std::vector<int> &v) {
     Cubo c = orig;
@@ -145,17 +128,15 @@ float fitness(const Cubo &orig, const std::vector<int> &v) {
     for(int i=0;i<12;i++) s += FB[eb(c,i)];
     for(int i=0;i<8;i++)  s += FC[ec(c,i)];
 
-    int mx = 12*FB[0] + 8*FC[0];   /* melhor pontuação bruta possível */
-    int mn = 12*FB[2] + 8*FC[2];   /* pior  pontuação bruta possível  */
-    /* s próximo de mx → cubo quase resolvido → fitness alto
-     * A fórmula original (s-mx)/(mn-mx) estava INVERTIDA: dava 0 para o
-     * melhor estado e 100 para o pior.  A correção espelha o numerador. */
+    int mx = 12*FB[0] + 8*FC[0];
+    int mn = 12*FB[2] + 8*FC[2];
     float r = ((float)(mx - s) / (float)(mx - mn)) * 100.f;
     return r < 0 ? 0 : r > 99 ? 99 : r;
 }
 
 struct Ind { std::vector<int> v; float f = 0; };
 
+/* Torneio de 4 candidatos */
 void torneio(const std::vector<Ind>&pop, int&a, int&b, std::mt19937&rng) {
     int c[4];
     for(int i=0;i<4;i++) c[i] = rng() % TAM_POP;
@@ -175,6 +156,27 @@ Ind cruzar(const Ind&p1, const Ind&p2, std::mt19937&rng) {
 
 void mutar(Ind &ind, std::mt19937 &rng) {
     ind.v[rng() % ind.v.size()] = rng() % NUM_MOV;
+}
+
+/* -----------------------------------------------------------------------
+ * Reinicialização parcial: substitui uma fração da população (exceto elite)
+ * por indivíduos aleatórios de comprimento variável.
+ * Mantém a diversidade quando a população converge prematuramente.
+ * ----------------------------------------------------------------------- */
+void reinicializar_parcial(std::vector<Ind> &pop, const Cubo &cubo,
+                           int n_embaralha, std::mt19937 &rng) {
+    int n_elite  = (int)(TAM_POP * ELITE_FRAC);
+    int n_reinit = (int)(TAM_POP * REINIT_FRAC);
+    int max_crom = n_embaralha * MAX_CROM_MULT;
+    if(max_crom < 1) max_crom = 1;
+
+    for(int i = n_elite; i < n_elite + n_reinit && i < TAM_POP; i++) {
+        int tam = n_embaralha + (int)(rng() % (n_embaralha + 1));
+        if(tam > max_crom) tam = max_crom;
+        pop[i].v.resize(tam);
+        for(auto &m : pop[i].v) m = rng() % NUM_MOV;
+        pop[i].f = fitness(cubo, pop[i].v);
+    }
 }
 
 void embaralhar(Cubo &c, int n, unsigned seed) {
@@ -197,10 +199,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    int max_crom = n_embaralha * MAX_CROM_MULT;
+
     fprintf(stderr, "=== SEQUENCIAL ===\n");
     fprintf(stderr, "Threads : 1 (sem paralelismo)\n");
-    fprintf(stderr, "Pop: %d | Cromo: %d | Embaralha: %d | Seed: %u\n\n",
-            TAM_POP, n_embaralha, n_embaralha, seed);
+    fprintf(stderr, "Pop: %d | Cromo: %d..%d | Embaralha: %d | Seed: %u\n\n",
+            TAM_POP, n_embaralha, max_crom, n_embaralha, seed);
 
     Cubo cubo; cubo_init(cubo); embaralhar(cubo, n_embaralha, seed);
 
@@ -209,10 +213,14 @@ int main(int argc, char **argv) {
     int estag = 0;
     float mg = -1;
     int g_conv = 0;
+    int n_elite = (int)(TAM_POP * ELITE_FRAC);
 
+    /* Inicialização com cromossomos de tamanho variável: n_embaralha até 2×n */
     std::vector<Ind> pop(TAM_POP);
     for(auto &ind : pop) {
-        ind.v.resize(n_embaralha);
+        int tam = n_embaralha + (int)(rng() % (n_embaralha + 1));
+        if(tam > max_crom) tam = max_crom;
+        ind.v.resize(tam);
         for(auto &m : ind.v) m = rng() % NUM_MOV;
         ind.f = fitness(cubo, ind.v);
     }
@@ -222,7 +230,12 @@ int main(int argc, char **argv) {
     for(int g = 1; estag < MAX_ESTAG; g++) {
         if(pop[0].f >= FIT_MAX) { g_conv = g; break; }
 
-        std::vector<Ind> filhos; filhos.reserve(TAM_POP);
+        /* Preserva elite sem alteração */
+        std::vector<Ind> filhos;
+        filhos.reserve(TAM_POP);
+        for(int i = 0; i < n_elite; i++) filhos.push_back(pop[i]);
+
+        /* Gera o restante por seleção + cruzamento + mutação */
         while((int)filhos.size() < TAM_POP) {
             int a, b; torneio(pop, a, b, rng);
             Ind f = cruzar(pop[a], pop[b], rng);
@@ -230,14 +243,22 @@ int main(int argc, char **argv) {
             f.f = fitness(cubo, f.v);
             filhos.push_back(std::move(f));
         }
-        for(auto &f : filhos) pop.push_back(std::move(f));
+
+        pop = std::move(filhos);
         std::sort(pop.begin(), pop.end(), [](const Ind&a, const Ind&b){ return a.f > b.f; });
-        pop.resize(TAM_POP);
 
-        if(pop[0].f > mg) { mg = pop[0].f; estag = 0; taxa = TAX_MUT_INI; g_conv = g; }
-        else              { estag++; taxa += TAX_MUT_INC; }
+        if(pop[0].f > mg) {
+            mg = pop[0].f; estag = 0; taxa = TAX_MUT_INI; g_conv = g;
+        } else {
+            estag++;
+            taxa += TAX_MUT_INC;
+            /* Reinicialização parcial a cada 20 gerações sem melhora */
+            if(estag % 20 == 0) {
+                reinicializar_parcial(pop, cubo, n_embaralha, rng);
+                std::sort(pop.begin(), pop.end(), [](const Ind&a, const Ind&b){ return a.f > b.f; });
+            }
+        }
     }
-
 
     printf("RESULTADO,Sequencial,1,%d,%.4f,%s,%d\n",
            n_embaralha, pop[0].f,

@@ -13,7 +13,6 @@ Por padrão assume os nomes acima no diretório atual.
 
 import sys
 import csv
-import re
 from pathlib import Path
 from openpyxl import load_workbook
 
@@ -27,7 +26,6 @@ THREADS_LIST = [4, 8, 16, 32]
 
 # -------------------------------------------------------------------
 # Mapeamento: (algo_nome, mov) → linha de início do bloco na planilha
-# Construído dinamicamente lendo a aba "Resultados".
 # -------------------------------------------------------------------
 
 def build_block_map(ws):
@@ -38,13 +36,13 @@ def build_block_map(ws):
         v2 = ws.cell(r, 2).value
         if v1 and v2 is not None and isinstance(v2, int):
             algo_str = str(v1).strip()
-            if algo_str in ("Sequencial", "TBB – Fitness Paralelo", "TBB – Modelo de Ilhas"):
+            if algo_str in ("Sequencial", "TBB – Fitness Paralelo"):
                 block_map[(algo_str, int(v2))] = r
     return block_map
 
 
 def col_for_threads(base_col, threads, threads_list=THREADS_LIST):
-    """Dado a coluna base (1T/Seq) e um número de threads, retorna a coluna Excel."""
+    """Dado a coluna base e o número de threads, retorna a coluna Excel."""
     if threads not in threads_list:
         raise ValueError(f"Threads {threads} não está em {threads_list}")
     return base_col + threads_list.index(threads) + 1
@@ -53,10 +51,10 @@ def col_for_threads(base_col, threads, threads_list=THREADS_LIST):
 def fill_row(ws, data_row, algo, threads, tempo, fitness, taxa_sucesso, geracao):
     """Preenche as colunas corretas para uma linha de dados."""
     # Colunas de dados:
-    # C4  = Tempo Sequencial         C9  = Fitness Sequencial
-    # C5..C8 = Tempo TBB 4/8/16/32T  C10..C13 = Fitness TBB 4/8/16/32T
-    # C28 = Taxa Sucesso Seq         C29..C32 = Taxa TBB threads (FitPar ou Ilhas)
-    # C33 = Geração Seq              C34..C37 = Geração TBB threads
+    # C4  = Tempo Sequencial          C9  = Fitness Sequencial
+    # C5..C8 = Tempo TBB 4/8/16/32T   C10..C13 = Fitness TBB 4/8/16/32T
+    # C28 = Taxa Sucesso Seq          C29..C32 = Taxa TBB threads
+    # C33 = Geração Seq               C34..C37 = Geração TBB threads
 
     if algo == "Sequencial":
         ws.cell(data_row, 4).value  = tempo
@@ -64,7 +62,7 @@ def fill_row(ws, data_row, algo, threads, tempo, fitness, taxa_sucesso, geracao)
         ws.cell(data_row, 28).value = taxa_sucesso
         ws.cell(data_row, 33).value = geracao
     else:
-        # TBB – Fitness Paralelo ou TBB – Modelo de Ilhas
+        # TBB – Fitness Paralelo
         tc = col_for_threads(4, threads)   # cols 5,6,7,8
         fc = col_for_threads(9, threads)   # cols 10,11,12,13
         sc = col_for_threads(28, threads)  # cols 29,30,31,32
@@ -96,7 +94,7 @@ def main():
 
     print("Mapeando blocos na aba Resultados...")
     block_map = build_block_map(ws)
-    print(f"  {len(block_map)} blocos encontrados (esperado: 60)")
+    print(f"  {len(block_map)} blocos encontrados (esperado: 40)")  # 2 algos × 20 profundidades
 
     print(f"Lendo resultados: {csv_path}")
     erros = 0
@@ -127,21 +125,17 @@ def main():
                 continue
 
             block_start = block_map[key]
-            # rep vai de 1..10, linha de dados = block_start + rep - 1
             if rep < 1 or rep > 10:
                 print(f"  AVISO: rep={rep} fora de 1..10, ignorado")
                 erros += 1
                 continue
 
             data_row = block_start + rep - 1
-
             t_val = threads if threads else None
             fill_row(ws, data_row, algo, t_val, tempo, fitness, taxa, geracao)
             preenchidos += 1
 
     print(f"\nDados preenchidos: {preenchidos} | Erros/avisos: {erros}")
-
-    # Salva (sobrescreve o original)
     wb.save(str(xlsx_path))
     print(f"Planilha salva: {xlsx_path}")
     print("\nPronto! Abra a planilha para conferir as fórmulas automáticas.")

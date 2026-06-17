@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # rodar_experimentos.sh
-# Executa os três binários do Cubo (Sequencial, FitnessParalelo, ModeloIlhas)
+# Executa os dois binários do Cubo (Sequencial, FitnessParalelo)
 # para movimentos de embaralhamento de 1 a 20, com N=10 repetições cada.
 #
 # Uso:
@@ -18,19 +18,17 @@ SEED_BASE=${2:-42}    # semente base (cada repetição incrementa: seed=SEED_BAS
 
 BINARIO_SEQ="./TesteCuboSequencial"
 BINARIO_FIT="./TesteCuboFitness"
-BINARIO_ILH="./TesteCuboIlha"
 
 CSV="resultados.csv"
 THREADS=(4 8 16 32)
 
 # Verifica que os binários existem
-for bin in "$BINARIO_SEQ" "$BINARIO_FIT" "$BINARIO_ILH"; do
+for bin in "$BINARIO_SEQ" "$BINARIO_FIT"; do
     if [[ ! -x "$bin" ]]; then
         echo "ERRO: binário não encontrado ou não executável: $bin"
         echo "Compile com:"
         echo "  g++ -O3 -o TesteCuboSequencial TesteCuboSequencial.cpp"
         echo "  g++ -O3 -o TesteCuboFitness    TesteCuboFitness.cpp    -ltbb"
-        echo "  g++ -O3 -o TesteCuboIlha       TesteCuboIlha.cpp       -ltbb"
         exit 1
     fi
 done
@@ -44,8 +42,7 @@ echo "Resultados em: $CSV"
 echo "============================================================"
 
 # ----------------------------------------------------------
-# Função que executa um binário, mede tempo com perf/time
-# e extrai a linha RESULTADO do stdout.
+# Função que executa um binário, mede tempo e extrai RESULTADO
 # Argumentos: <binario> <mov> <threads_ou_vazio> <seed> <rep>
 # ----------------------------------------------------------
 run_and_log() {
@@ -55,22 +52,18 @@ run_and_log() {
     local seed="$4"
     local rep="$5"
 
-    # Monta o comando
     if [[ -z "$threads" ]]; then
         cmd=("$bin" "$mov" "$seed")
     else
         cmd=("$bin" "$mov" "$threads" "$seed")
     fi
 
-    # Executa medindo tempo real em segundos com alta precisão
     local t_start t_end tempo resultado
     t_start=$(date +%s%N)
     resultado=$("${cmd[@]}" 2>/dev/null)
     t_end=$(date +%s%N)
     tempo=$(echo "scale=4; ($t_end - $t_start) / 1000000000" | bc)
 
-    # Extrai campos da linha RESULTADO,<Algo>,<Threads>,<Mov>,<Fitness>,<Resolvido>,<Geracao>
-    # Formato: RESULTADO,FitnessParalelo,<T>,<Mov>,<Fitness>,<SIM|NAO>,<Gen>
     local linha_res
     linha_res=$(echo "$resultado" | grep "^RESULTADO")
     if [[ -z "$linha_res" ]]; then
@@ -80,12 +73,10 @@ run_and_log() {
 
     IFS=',' read -r _ algo_campo threads_campo mov_campo fitness_campo resolvido_campo geracao_campo <<< "$linha_res"
 
-    # Determina nome legível do algoritmo
     local algo_nome
     case "$algo_campo" in
         Sequencial)      algo_nome="Sequencial" ;;
         FitnessParalelo) algo_nome="TBB – Fitness Paralelo" ;;
-        ModeloIlhas)     algo_nome="TBB – Modelo de Ilhas" ;;
         *)               algo_nome="$algo_campo" ;;
     esac
 
@@ -109,11 +100,6 @@ for mov in $(seq 1 20); do
         # TBB Fitness Paralelo
         for t in "${THREADS[@]}"; do
             run_and_log "$BINARIO_FIT" "$mov" "$t" "$seed" "$rep"
-        done
-
-        # TBB Modelo de Ilhas
-        for t in "${THREADS[@]}"; do
-            run_and_log "$BINARIO_ILH" "$mov" "$t" "$seed" "$rep"
         done
     done
 done

@@ -4,6 +4,7 @@
 #include <math.h>
 #include <sys/resource.h>
 #include <omp.h>
+#include <gmp.h>
 
 #define SET_BIT(arr, i)  ((arr)[(i)>>3] |=  (1u << ((i)&7)))
 #define GET_BIT(arr, i)  ((arr)[(i)>>3] &   (1u << ((i)&7)))
@@ -30,15 +31,16 @@ void testeCrivo(long long N) {
     uint8_t *pequeno = calloc(bytes_pequeno, 1);
     if (!pequeno) { fprintf(stderr, "Erro de alocacao.\n"); return; }
 
-    long long total_primos = 1;
-    long long total_marcacoes = 0;
+    mpz_t total_primos, total_marcacoes;
+    mpz_init_set_ui(total_primos,    1); /* conta o 2 */
+    mpz_init_set_ui(total_marcacoes, 0);
 
     /* Fase pequena: sequencial */
     for (long long i = 1; 2*i+1 <= limite; i++) {
         if (!GET_BIT(pequeno, i)) {
             long long p = 2*i + 1;
             for (long long j = (p*p-1)/2; j < tam_pequeno; j += p) {
-                if (!GET_BIT(pequeno, j)) { SET_BIT(pequeno, j); total_marcacoes++; }
+                if (!GET_BIT(pequeno, j)) { SET_BIT(pequeno, j); mpz_add_ui(total_marcacoes, total_marcacoes, 1); }
             }
         }
     }
@@ -56,7 +58,7 @@ void testeCrivo(long long N) {
     free(pequeno);
 
     for (long long i = 0; i < n_pp; i++)
-        if (primos_p[i] <= N) total_primos++;
+        if (primos_p[i] <= N) mpz_add_ui(total_primos, total_primos, 1);
 
     /* Fase segmentada: paralela com OpenMP — cada thread tem buffer próprio */
     long long bytes_bloco = (BLOCO / 8) + 2;
@@ -76,12 +78,14 @@ void testeCrivo(long long N) {
         }
     }
 
-    #pragma omp parallel reduction(+:total_marcacoes, total_primos)
+    #pragma omp parallel
     {
         uint8_t *bloco_local = malloc(bytes_bloco);
         if (!bloco_local) {
             #pragma omp cancel parallel
         }
+
+        long long loc_primos = 0, loc_marcacoes = 0;
 
         #pragma omp for schedule(dynamic, 1)
         for (long long seg = 0; seg < n_segmentos; seg++) {
@@ -103,39 +107,57 @@ void testeCrivo(long long N) {
                 long long p = primos_p[pi];
                 long long primeiro = ((base + p - 1) / p) * p;
                 if (primeiro % 2 == 0) primeiro += p;
-                if (primeiro < p*p) primeiro = p*p;
+                /* Usa __int128 para evitar overflow em p*p quando p > ~3e9 */
+                __int128 pp = (__int128)p * p;
+                if ((__int128)primeiro < pp) {
+                    if (pp > (__int128)topo) continue; /* p*p além do segmento, nada a marcar */
+                    primeiro = (long long)pp;
+                }
 
                 for (long long mult = primeiro; mult <= topo; mult += 2*p) {
                     long long k = (mult - base) / 2;
                     if (!GET_BIT(bloco_local, k)) {
                         SET_BIT(bloco_local, k);
-                        total_marcacoes++;
+                        loc_marcacoes++;
                     }
                 }
             }
 
             for (long long k = 0; k < tam_seg; k++)
-                if (!GET_BIT(bloco_local, k)) total_primos++;
+                if (!GET_BIT(bloco_local, k)) loc_primos++;
         }
 
         free(bloco_local);
+
+        #pragma omp critical
+        {
+            mpz_add_ui(total_primos,    total_primos,    (unsigned long)loc_primos);
+            mpz_add_ui(total_marcacoes, total_marcacoes, (unsigned long)loc_marcacoes);
+        }
     }
 
     long long mem_kb = get_mem_kb();
 
-    printf("PRIMOS=%lld\n", total_primos);
-    printf("MARCACOES=%lld\n", total_marcacoes);
+    gmp_printf("PRIMOS=%Zd\n",    total_primos);
+    gmp_printf("MARCACOES=%Zd\n", total_marcacoes);
     printf("MEM_KB=%lld\n", mem_kb);
 
+    mpz_clear(total_primos);
+    mpz_clear(total_marcacoes);
     free(primos_p);
 }
 
 int main(int argc, char *argv[]) {
     if (argc < 2) { fprintf(stderr, "Uso: %s <N>\n", argv[0]); return 1; }
-    long long N = atoll(argv[1]);
+
+    mpz_t N_big;
+    mpz_init_set_str(N_big, argv[1], 10);
+    long long N = mpz_get_si(N_big);
+    mpz_clear(N_big);
+
     testeCrivo(N);
     return 0;
 }
 
-// Compilar: gcc -O3 -fopenmp TesteIntervaloCrivoImparBITSET.c -o TesteIntervaloCrivoImparBITSET -lm
-// Rodar:    OMP_NUM_THREADS=8 ./TesteIntervaloCrivoImparBITSET 100000000000
+// Compilar: gcc -O3 -fopenmp TesteIntervaloCrivoImparBITSET.c -o TesteIntervaloCrivoImparBITSET -lm -lgmp
+// Rodar:    OMP_NUM_THREADS=8 ./TesteIntervaloCrivoImparBITSET 100000000000000
