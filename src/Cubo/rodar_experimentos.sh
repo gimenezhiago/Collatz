@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # rodar_experimentos.sh
-# Executa os dois binários do Cubo (Sequencial, FitnessParalelo)
+# Executa os quatro binários do Cubo (Sequencial, Paralelo, VNS, VNSParalelo)
 # para movimentos de embaralhamento de 1 a 20, com N=10 repetições cada.
 #
 # Uso:
@@ -14,30 +14,35 @@
 set -euo pipefail
 
 N_REP=${1:-10}        # número de repetições por configuração
-SEED_BASE=${2:-42}    # semente base (cada repetição incrementa: seed=SEED_BASE+rep)
+SEED_BASE=${2:-42}    # semente base (cada repetição incrementa: seed=SEED_BASE+rep-1)
 
 BINARIO_SEQ="./TesteCuboSequencial"
-BINARIO_FIT="./TesteCuboFitness"
+BINARIO_PAR="./TesteCuboParalelo"
+BINARIO_VNS="./TesteCuboVNS"
+BINARIO_VNSPAR="./TesteCuboVNSParalelo"
 
 CSV="resultados.csv"
 THREADS=(4 8 16 32)
 
 # Verifica que os binários existem
-for bin in "$BINARIO_SEQ" "$BINARIO_FIT"; do
+for bin in "$BINARIO_SEQ" "$BINARIO_PAR" "$BINARIO_VNS" "$BINARIO_VNSPAR"; do
     if [[ ! -x "$bin" ]]; then
         echo "ERRO: binário não encontrado ou não executável: $bin"
         echo "Compile com:"
-        echo "  g++ -O3 -o TesteCuboSequencial TesteCuboSequencial.cpp"
-        echo "  g++ -O3 -o TesteCuboFitness    TesteCuboFitness.cpp    -ltbb"
+        echo "  g++ -O3 -o TesteCuboSequencial  TesteCuboSequencial.cpp"
+        echo "  g++ -O3 -o TesteCuboParalelo    TesteCuboParalelo.cpp    -ltbb"
+        echo "  g++ -O3 -o TesteCuboVNS         TesteCuboVNS.cpp"
+        echo "  g++ -O3 -o TesteCuboVNSParalelo TesteCuboVNSParalelo.cpp -ltbb"
         exit 1
     fi
 done
 
-# Cabeçalho CSV
+# Cabeçalho CSV (formato longo: uma linha por execução)
 echo "Algoritmo,Threads,Mov,Repeticao,Tempo_s,Fitness,Resolvido,Geracao" > "$CSV"
 
 echo "============================================================"
 echo "Iniciando experimentos: MOV=1..20, N=${N_REP} repetições"
+echo "Algoritmos: Sequencial, Paralelo(4/8/16/32T), VNS, VNSParalelo(4/8/16/32T)"
 echo "Resultados em: $CSV"
 echo "============================================================"
 
@@ -48,7 +53,7 @@ echo "============================================================"
 run_and_log() {
     local bin="$1"
     local mov="$2"
-    local threads="$3"   # "" para sequencial
+    local threads="$3"   # "" para algoritmos sequenciais (Sequencial/VNS)
     local seed="$4"
     local rep="$5"
 
@@ -73,15 +78,8 @@ run_and_log() {
 
     IFS=',' read -r _ algo_campo threads_campo mov_campo fitness_campo resolvido_campo geracao_campo <<< "$linha_res"
 
-    local algo_nome
-    case "$algo_campo" in
-        Sequencial)      algo_nome="Sequencial" ;;
-        FitnessParalelo) algo_nome="TBB – Fitness Paralelo" ;;
-        *)               algo_nome="$algo_campo" ;;
-    esac
-
-    echo "$algo_nome,$threads_campo,$mov,$rep,$tempo,$fitness_campo,$resolvido_campo,$geracao_campo" >> "$CSV"
-    echo "  OK: $algo_nome | threads=$threads_campo | mov=$mov | rep=$rep | t=${tempo}s | fit=$fitness_campo | $resolvido_campo"
+    echo "$algo_campo,$threads_campo,$mov,$rep,$tempo,$fitness_campo,$resolvido_campo,$geracao_campo" >> "$CSV"
+    echo "  OK: $algo_campo | threads=$threads_campo | mov=$mov | rep=$rep | t=${tempo}s | fit=$fitness_campo | $resolvido_campo"
 }
 
 # ----------------------------------------------------------
@@ -94,12 +92,20 @@ for mov in $(seq 1 20); do
     for rep in $(seq 1 "$N_REP"); do
         seed=$(( SEED_BASE + rep - 1 ))
 
-        # Sequencial
+        # Sequencial (GA)
         run_and_log "$BINARIO_SEQ" "$mov" "" "$seed" "$rep"
 
-        # TBB Fitness Paralelo
+        # Paralelo (GA + TBB)
         for t in "${THREADS[@]}"; do
-            run_and_log "$BINARIO_FIT" "$mov" "$t" "$seed" "$rep"
+            run_and_log "$BINARIO_PAR" "$mov" "$t" "$seed" "$rep"
+        done
+
+        # VNS sequencial
+        run_and_log "$BINARIO_VNS" "$mov" "" "$seed" "$rep"
+
+        # VNS Paralelo (+ TBB)
+        for t in "${THREADS[@]}"; do
+            run_and_log "$BINARIO_VNSPAR" "$mov" "$t" "$seed" "$rep"
         done
     done
 done

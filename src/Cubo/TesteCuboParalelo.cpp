@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <vector>
 #include <random>
+#include <tbb/tbb.h>
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include <tbb/global_control.h>
 
 #define U 0
 #define D 1
@@ -28,14 +32,10 @@
  *
  * Para cada peça de BORDA (12 peças):
  *   correto=-96  orientado=-78  permutado=35  incorreto=-6
- *
- * O valor mais determinante é o da borda permutada (+35), pois é o único
- * positivo e permite distinguir cubos mais próximos da solução.
  * ----------------------------------------------------------------------- */
 static const int FC[4] = {-1, -5, -9, -6};
 static const int FB[4] = {-96, -78, 35, -6};
 
-/* Coordenadas físicas das 12 bordas e seus centros esperados (face, lin, col) */
 static const int BORDAS[12][2][3] = {
     {{U,2,1},{F,0,1}}, {{U,1,2},{R,0,1}}, {{U,0,1},{B,0,1}}, {{U,1,0},{L,0,1}},
     {{F,1,2},{R,1,0}}, {{F,1,0},{L,1,2}}, {{B,1,0},{R,1,2}}, {{B,1,2},{L,1,0}},
@@ -44,8 +44,6 @@ static const int BORDAS[12][2][3] = {
 static const int BCOR[12][2] = {
     {U,F},{U,R},{U,B},{U,L},{F,R},{F,L},{B,R},{B,L},{D,F},{D,R},{D,B},{D,L}
 };
-
-/* Coordenadas físicas dos 8 cantos e seus centros esperados */
 static const int CANTOS[8][3][3] = {
     {{U,2,2},{F,0,2},{R,0,0}}, {{U,2,0},{F,0,0},{L,0,2}},
     {{U,0,2},{B,0,0},{R,0,2}}, {{U,0,0},{B,0,2},{L,0,0}},
@@ -80,9 +78,9 @@ void aplicar(Cubo&c,const std::vector<int>&v){for(int m:v)aplicar_mov(c,m);}
  * Estado de borda i  →  0=correto  1=orientado  2=permutado  3=incorreto
  * ----------------------------------------------------------------------- */
 static int eb(const Cubo &c, int i) {
-    int c0 = c.face[BORDAS[i][0][0]][BORDAS[i][0][1]][BORDAS[i][0][2]];
-    int c1 = c.face[BORDAS[i][1][0]][BORDAS[i][1][1]][BORDAS[i][1][2]];
-    int e0 = BCOR[i][0], e1 = BCOR[i][1];
+    int c0=c.face[BORDAS[i][0][0]][BORDAS[i][0][1]][BORDAS[i][0][2]];
+    int c1=c.face[BORDAS[i][1][0]][BORDAS[i][1][1]][BORDAS[i][1][2]];
+    int e0=BCOR[i][0], e1=BCOR[i][1];
     if(c0==e0 && c1==e1) return 0;
     if(c0==e1 && c1==e0) return 2;
     if(c0==e0 || c1==e1) return 1;
@@ -95,8 +93,8 @@ static int eb(const Cubo &c, int i) {
 static int ec(const Cubo &c, int i) {
     int co[3], es[3];
     for(int k=0;k<3;k++){
-        co[k] = c.face[CANTOS[i][k][0]][CANTOS[i][k][1]][CANTOS[i][k][2]];
-        es[k] = CCOR[i][k];
+        co[k]=c.face[CANTOS[i][k][0]][CANTOS[i][k][1]][CANTOS[i][k][2]];
+        es[k]=CCOR[i][k];
     }
     int ct=0;
     for(int k=0;k<3;k++) if(co[k]==es[k]) ct++;
@@ -123,7 +121,6 @@ float fitness(const Cubo &orig, const std::vector<int> &v) {
     Cubo c = orig;
     aplicar(c, v);
     if(resolvido(c)) return FIT_MAX;
-
     int s = 0;
     for(int i=0;i<12;i++) s += FB[eb(c,i)];
     for(int i=0;i<8;i++)  s += FC[ec(c,i)];
@@ -135,8 +132,8 @@ float fitness(const Cubo &orig, const std::vector<int> &v) {
     int fb_max = std::max({FB[0],FB[1],FB[2],FB[3]});
     int fc_min = std::min({FC[0],FC[1],FC[2],FC[3]});
     int fc_max = std::max({FC[0],FC[1],FC[2],FC[3]});
-    int s_min = 12*fb_min + 8*fc_min;   /* melhor s possível (mais próximo do resolvido) */
-    int s_max = 12*fb_max + 8*fc_max;   /* pior s possível */
+    int s_min = 12*fb_min + 8*fc_min;
+    int s_max = 12*fb_max + 8*fc_max;
 
     float r = ((float)(s_max - s) / (float)(s_max - s_min)) * 100.f;
     return r < 0 ? 0 : r > 99 ? 99 : r;
@@ -144,48 +141,25 @@ float fitness(const Cubo &orig, const std::vector<int> &v) {
 
 struct Ind { std::vector<int> v; float f = 0; };
 
-/* Torneio de 4 candidatos */
+/* Torneio de 4 candidatos — usa tamanho real da população */
 void torneio(const std::vector<Ind>&pop, int&a, int&b, std::mt19937&rng) {
+    int sz = (int)pop.size();
     int c[4];
-    for(int i=0;i<4;i++) c[i] = rng() % TAM_POP;
+    for(int i=0;i<4;i++) c[i] = rng() % sz;
     std::sort(c, c+4, [&](int x, int y){ return pop[x].f > pop[y].f; });
     a = c[0]; b = c[1];
 }
 
 Ind cruzar(const Ind&p1, const Ind&p2, std::mt19937&rng) {
-    int t = ((int)p1.v.size() + (int)p2.v.size()) / 2;
-    if(t < 1) t = 1;
+    int t = ((int)p1.v.size() + (int)p2.v.size()) / 2; if(t<1) t=1;
     Ind f; f.v.resize(t);
     for(int i=0;i<t;i++)
-        f.v[i] = (i%2==0) ? ((i<(int)p1.v.size()) ? p1.v[i] : p1.v[rng()%p1.v.size()])
-                           : ((i<(int)p2.v.size()) ? p2.v[i] : p2.v[rng()%p2.v.size()]);
+        f.v[i]=(i%2==0)?((i<(int)p1.v.size())?p1.v[i]:p1.v[rng()%p1.v.size()])
+                        :((i<(int)p2.v.size())?p2.v[i]:p2.v[rng()%p2.v.size()]);
     return f;
 }
 
-void mutar(Ind &ind, std::mt19937 &rng) {
-    ind.v[rng() % ind.v.size()] = rng() % NUM_MOV;
-}
-
-/* -----------------------------------------------------------------------
- * Reinicialização parcial: substitui uma fração da população (exceto elite)
- * por indivíduos aleatórios de comprimento variável.
- * Mantém a diversidade quando a população converge prematuramente.
- * ----------------------------------------------------------------------- */
-void reinicializar_parcial(std::vector<Ind> &pop, const Cubo &cubo,
-                           int n_embaralha, std::mt19937 &rng) {
-    int n_elite  = (int)(TAM_POP * ELITE_FRAC);
-    int n_reinit = (int)(TAM_POP * REINIT_FRAC);
-    int max_crom = n_embaralha * MAX_CROM_MULT;
-    if(max_crom < 1) max_crom = 1;
-
-    for(int i = n_elite; i < n_elite + n_reinit && i < TAM_POP; i++) {
-        int tam = n_embaralha + (int)(rng() % (n_embaralha + 1));
-        if(tam > max_crom) tam = max_crom;
-        pop[i].v.resize(tam);
-        for(auto &m : pop[i].v) m = rng() % NUM_MOV;
-        pop[i].f = fitness(cubo, pop[i].v);
-    }
-}
+void mutar(Ind &ind, std::mt19937 &rng) { ind.v[rng()%ind.v.size()] = rng()%NUM_MOV; }
 
 void embaralhar(Cubo &c, int n, unsigned seed) {
     std::mt19937 r(seed);
@@ -198,63 +172,77 @@ void embaralhar(Cubo &c, int n, unsigned seed) {
 }
 
 int main(int argc, char **argv) {
-    /* Uso: ./TesteCuboSequencial <n_embaralha> [seed] */
-    int n_embaralha = (argc > 1) ? atoi(argv[1]) : 20;
-    unsigned seed   = (argc > 2) ? (unsigned)atoi(argv[2]) : 42;
+    /* Uso: ./TesteCuboParalelo <n_embaralha> <n_threads> [seed] */
+    int n_embaralha   = (argc > 1) ? atoi(argv[1]) : 20;
+    unsigned nthreads = (argc > 2) ? (unsigned)atoi(argv[2]) : tbb::info::default_concurrency();
+    unsigned seed     = (argc > 3) ? (unsigned)atoi(argv[3]) : 42;
 
     if(n_embaralha < 1 || n_embaralha > 30) {
         fprintf(stderr, "ERRO: n_embaralha deve ser entre 1 e 30\n");
         return 1;
     }
+    if(nthreads < 1) nthreads = 1;
 
     int max_crom = n_embaralha * MAX_CROM_MULT;
+    int n_elite  = (int)(TAM_POP * ELITE_FRAC);
 
-    fprintf(stderr, "=== SEQUENCIAL ===\n");
-    fprintf(stderr, "Threads : 1 (sem paralelismo)\n");
-    fprintf(stderr, "Pop: %d | Cromo: %d..%d | Embaralha: %d | Seed: %u\n\n",
-            TAM_POP, n_embaralha, max_crom, n_embaralha, seed);
+    fprintf(stderr, "=== TBB — GA PARALELO ===\n");
+    fprintf(stderr, "Threads: %u | Pop: %d | Cromo: %d..%d | Embaralha: %d | Seed: %u\n\n",
+            nthreads, TAM_POP, n_embaralha, max_crom, n_embaralha, seed);
+
+    tbb::global_control gc(tbb::global_control::max_allowed_parallelism, nthreads);
 
     Cubo cubo; cubo_init(cubo); embaralhar(cubo, n_embaralha, seed);
 
-    /* RNG da busca também deriva do seed (antes usava random_device, o que
-     * tornava o resultado não-reprodutível mesmo com o mesmo seed).
-     * O offset evita reusar a mesma sequência do RNG do embaralhamento. */
-    std::mt19937 rng(seed * 2654435761u + 1u);
+    /* Inicialização paralela com cromossomos de tamanho variável */
+    std::vector<Ind> pop(TAM_POP);
+    tbb::parallel_for(tbb::blocked_range<int>(0, TAM_POP),
+        [&](const tbb::blocked_range<int> &r) {
+            /* RNG determinístico por chunk, derivado do seed do usuário
+             * (antes usava random_device: não-reprodutível e chamado em
+             * alta frequência dentro do parallel_for, gerando contenção). */
+            std::mt19937 rng(seed ^ ((uint32_t)r.begin() * 2654435761u + 0x9E3779B9u));
+            for(int i = r.begin(); i < r.end(); i++) {
+                int tam = n_embaralha + (int)(rng() % (n_embaralha + 1));
+                if(tam > max_crom) tam = max_crom;
+                pop[i].v.resize(tam);
+                for(auto &m : pop[i].v) m = rng() % NUM_MOV;
+                pop[i].f = fitness(cubo, pop[i].v);
+            }
+        });
+    std::sort(pop.begin(), pop.end(), [](const Ind&a, const Ind&b){ return a.f > b.f; });
+
     float taxa = TAX_MUT_INI;
     int estag = 0;
     float mg = -1;
     int g_conv = 0;
-    int n_elite = (int)(TAM_POP * ELITE_FRAC);
 
-    /* Inicialização com cromossomos de tamanho variável: n_embaralha até 2×n */
-    std::vector<Ind> pop(TAM_POP);
-    for(auto &ind : pop) {
-        int tam = n_embaralha + (int)(rng() % (n_embaralha + 1));
-        if(tam > max_crom) tam = max_crom;
-        ind.v.resize(tam);
-        for(auto &m : ind.v) m = rng() % NUM_MOV;
-        ind.f = fitness(cubo, ind.v);
-    }
-    std::sort(pop.begin(), pop.end(), [](const Ind&a, const Ind&b){ return a.f > b.f; });
-
-    /* ---------- loop evolutivo ---------- */
+    /* ---------- loop evolutivo paralelo (avaliação de fitness em paralelo) ---------- */
     for(int g = 1; estag < MAX_ESTAG; g++) {
         if(pop[0].f >= FIT_MAX) { g_conv = g; break; }
 
-        /* Preserva elite sem alteração */
+        /* Preserva elite */
         std::vector<Ind> filhos;
         filhos.reserve(TAM_POP);
         for(int i = 0; i < n_elite; i++) filhos.push_back(pop[i]);
 
-        /* Gera o restante por seleção + cruzamento + mutação */
-        while((int)filhos.size() < TAM_POP) {
-            int a, b; torneio(pop, a, b, rng);
-            Ind f = cruzar(pop[a], pop[b], rng);
-            if((float)(rng() % 10000) / 10000.f < taxa) mutar(f, rng);
-            f.f = fitness(cubo, f.v);
-            filhos.push_back(std::move(f));
-        }
+        /* Filhos restantes gerados em paralelo */
+        int n_filhos = TAM_POP - n_elite;
+        std::vector<Ind> novos(n_filhos);
+        float tx = taxa;
+        tbb::parallel_for(tbb::blocked_range<int>(0, n_filhos),
+            [&](const tbb::blocked_range<int> &r) {
+                std::mt19937 rng(seed ^
+                                 ((uint32_t)r.begin() * 2246822519u + (uint32_t)g * 374761393u));
+                for(int i = r.begin(); i < r.end(); i++) {
+                    int a, b; torneio(pop, a, b, rng);
+                    novos[i] = cruzar(pop[a], pop[b], rng);
+                    if((float)(rng() % 10000) / 10000.f < tx) mutar(novos[i], rng);
+                    novos[i].f = fitness(cubo, novos[i].v);
+                }
+            });
 
+        for(auto &f : novos) filhos.push_back(std::move(f));
         pop = std::move(filhos);
         std::sort(pop.begin(), pop.end(), [](const Ind&a, const Ind&b){ return a.f > b.f; });
 
@@ -265,14 +253,26 @@ int main(int argc, char **argv) {
             taxa += TAX_MUT_INC;
             /* Reinicialização parcial a cada 20 gerações sem melhora */
             if(estag % 20 == 0) {
-                reinicializar_parcial(pop, cubo, n_embaralha, rng);
+                int n_reinit = (int)(TAM_POP * REINIT_FRAC);
+                tbb::parallel_for(tbb::blocked_range<int>(n_elite, n_elite + n_reinit),
+                    [&](const tbb::blocked_range<int> &r) {
+                        std::mt19937 rng(seed ^
+                                         ((uint32_t)r.begin() * 1234567891u + (uint32_t)g * 987654321u));
+                        for(int i = r.begin(); i < r.end() && i < TAM_POP; i++) {
+                            int tam = n_embaralha + (int)(rng() % (n_embaralha + 1));
+                            if(tam > max_crom) tam = max_crom;
+                            pop[i].v.resize(tam);
+                            for(auto &m : pop[i].v) m = rng() % NUM_MOV;
+                            pop[i].f = fitness(cubo, pop[i].v);
+                        }
+                    });
                 std::sort(pop.begin(), pop.end(), [](const Ind&a, const Ind&b){ return a.f > b.f; });
             }
         }
     }
 
-    printf("RESULTADO,Sequencial,1,%d,%.4f,%s,%d\n",
-           n_embaralha, pop[0].f,
+    printf("RESULTADO,Paralelo,%u,%d,%.4f,%s,%d\n",
+           nthreads, n_embaralha, pop[0].f,
            pop[0].f >= FIT_MAX ? "SIM" : "NAO",
            g_conv);
 
@@ -281,6 +281,6 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Resolvido      : %s\n", pop[0].f >= FIT_MAX ? "SIM" : "NAO");
     return 0;
 }
-/* Compilar: g++ -O3 -o TesteCuboSequencial TesteCuboSequencial.cpp
-   Rodar:    ./TesteCuboSequencial <n_mov> [seed]
+/* Compilar: g++ -O3 -o TesteCuboParalelo TesteCuboParalelo.cpp -ltbb
+   Rodar:    ./TesteCuboParalelo <n_mov> <n_threads> [seed]
    Tempo:    medido externamente via perf no script .sh               */
